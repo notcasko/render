@@ -2,7 +2,8 @@ import { BBox, FocusMode, LogCallback, ViewAxes, ViewBox } from './types';
 
 export function viewComponents(
   verts: Float64Array,
-  viewAxes: ViewAxes = 'zy'
+  viewAxes: ViewAxes = 'zy',
+  invertDepth: boolean = false
 ): { u: Float64Array; v: Float64Array; depth: Float64Array } {
   const n = verts.length / 3;
   const u = new Float64Array(n);
@@ -20,12 +21,12 @@ export function viewComponents(
       // higher/less-negative Z values than the background layers (body base, skin, back hair).
       // Since the rasterizer sorts descending by depth (farthest first, nearest last),
       // mapping depth to -z ensures background (lower Z) is drawn first, and foreground (higher Z) is drawn on top.
-      depth[i] = -z;
+      depth[i] = invertDepth ? z : -z;
     } else {
       // 'zy' default: screen X = Z, screen Y = Y, depth = X
       u[i] = z;
       v[i] = y;
-      depth[i] = x;
+      depth[i] = invertDepth ? -x : x;
     }
   }
   return { u, v, depth };
@@ -53,9 +54,10 @@ export function project(
   height: number,
   padPx: number,
   viewBox: ViewBox | null = null,
-  viewAxes: ViewAxes = 'zy'
+  viewAxes: ViewAxes = 'zy',
+  invertDepth: boolean = false
 ): { verts2d: Float32Array; depths: Float32Array; effectiveBox: ViewBox } {
-  const { u, v, depth } = viewComponents(verts, viewAxes);
+  const { u, v, depth } = viewComponents(verts, viewAxes, invertDepth);
   const box = viewBox || viewBoxForVerts(verts, viewAxes)!;
   const [uMin, uMax, vMin, vMax] = box;
 

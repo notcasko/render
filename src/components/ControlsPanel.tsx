@@ -581,6 +581,30 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
               ))}
             </div>
           </div>
+
+          {/* Invert Depth (-Z / +Z) */}
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[11px] text-gray-400 block">Invert Depth (-Z / +Z):</span>
+              <span className="text-[10px] text-gray-500 font-mono">
+                {settings.invertDepth ? 'Inverted (+Z foreground)' : 'Standard (-Z foreground)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSettings((s) => ({ ...s, invertDepth: !s.invertDepth }))}
+              disabled={disabled}
+              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
+                settings.invertDepth ? 'bg-rose-600' : 'bg-gray-700'
+              }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                  settings.invertDepth ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </div>
     </aside>

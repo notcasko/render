@@ -29,6 +29,7 @@ export interface RenderSettings {
   yawDeg: number;
   mirror: boolean;
   viewAxes: ViewAxes;
+  invertDepth?: boolean;
   gifCenter: GifCenter;
   targetFrame: number | null;
   targetTime: number | null;
@@ -71,6 +72,7 @@ export interface MeshData {
   weights: Float32Array;
   indices: Int32Array;
   tris: Tri[];
+  submeshTris?: Tri[][];
   bindPoses: Float64Array[];
 }
 

@@ -31,6 +31,7 @@ export const App: React.FC = () => {
     yawDeg: 0,
     mirror: true,
     viewAxes: 'zy',
+    invertDepth: false,
     gifCenter: 'body',
     targetFrame: 0,
     targetTime: null,

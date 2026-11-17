@@ -285,7 +285,7 @@ export class RenderPipeline {
         settings.mirror
       );
       const { renderV: rv0 } = recenterGeometry(v0, m0, settings.gifCenter);
-      const { verts2d: rV2d, depths: rDepths } = project(rv0, roughSize, roughSize, roughPad, lockedCameraBox, settings.viewAxes);
+      const { verts2d: rV2d, depths: rDepths } = project(rv0, roughSize, roughSize, roughPad, lockedCameraBox, settings.viewAxes, Boolean(settings.invertDepth));
       const roughRgba = await drawBatchesSoftware(rV2d, u0, b0, rDepths, roughSize, roughSize, settings.alphaCutoff, 'nearest');
       const roughBbox = settings.focusMode === 'largest_component'
         ? largestComponentBbox(roughRgba, roughSize, roughSize, settings.alphaCutoff)
@@ -301,7 +301,7 @@ export class RenderPipeline {
         try {
           const previewSize = 256;
           const previewPad = Math.round(previewSize * padFrac);
-          const { verts2d: pV2d, depths: pDepths } = project(rv0, previewSize, previewSize, previewPad, refinedBox, settings.viewAxes);
+          const { verts2d: pV2d, depths: pDepths } = project(rv0, previewSize, previewSize, previewPad, refinedBox, settings.viewAxes, Boolean(settings.invertDepth));
           const previewRgba = await drawBatchesSoftware(pV2d, u0, b0, pDepths, previewSize, previewSize, settings.alphaCutoff, 'nearest');
           const previewCanvas = document.createElement('canvas');
           previewCanvas.width = previewSize;
@@ -347,7 +347,7 @@ export class RenderPipeline {
           settings.mirror
         );
         const { renderV } = recenterGeometry(allV, partMeta, settings.gifCenter);
-        const { verts2d, depths } = project(renderV, workW, workH, padPx, refinedBox, settings.viewAxes);
+        const { verts2d, depths } = project(renderV, workW, workH, padPx, refinedBox, settings.viewAxes, Boolean(settings.invertDepth));
         const highRes = await drawBatchesSoftware(verts2d, allUvs, batches, depths, workW, workH, settings.alphaCutoff, settings.textureFilter);
         const frameRgba = (workW !== settings.width || workH !== settings.height)
           ? await downsampleImage(highRes, workW, workH, settings.width, settings.height)
@@ -479,7 +479,8 @@ export class RenderPipeline {
           previewSize,
           previewPad,
           null,
-          settings.viewAxes
+          settings.viewAxes,
+          Boolean(settings.invertDepth)
         );
 
         const previewRgba = await drawBatchesSoftware(
@@ -522,7 +523,8 @@ export class RenderPipeline {
       roughSize,
       roughPad,
       null,
-      settings.viewAxes
+      settings.viewAxes,
+      Boolean(settings.invertDepth)
     );
 
     let refinedBox: ViewBox = roughBox;
@@ -571,7 +573,8 @@ export class RenderPipeline {
       workH,
       padPx,
       refinedBox,
-      settings.viewAxes
+      settings.viewAxes,
+      Boolean(settings.invertDepth)
     );
 
     const highResRgba = await drawBatchesSoftware(

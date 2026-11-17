@@ -72,12 +72,21 @@ export function parseMeshData(meshAsset: any): MeshData {
     }
   }
 
-  // Triangles
+  // Collect all submesh triangle lists and flattened tris
+  const submeshTris: Tri[][] = [];
   const tris: Tri[] = [];
-  if (d.indices && d.indices.length > 0) {
-    const idxBuf = d.indices[0];
-    for (let i = 0; i < idxBuf.length; i += 3) {
-      tris.push([idxBuf[i], idxBuf[i + 1], idxBuf[i + 2]]);
+  if (d.indices && Array.isArray(d.indices)) {
+    for (let subIdx = 0; subIdx < d.indices.length; subIdx++) {
+      const idxBuf = d.indices[subIdx];
+      const curSubTris: Tri[] = [];
+      if (idxBuf) {
+        for (let i = 0; i < idxBuf.length; i += 3) {
+          const tri: Tri = [idxBuf[i], idxBuf[i + 1], idxBuf[i + 2]];
+          curSubTris.push(tri);
+          tris.push(tri);
+        }
+      }
+      submeshTris.push(curSubTris);
     }
   }
 
@@ -92,7 +101,7 @@ export function parseMeshData(meshAsset: any): MeshData {
     return m;
   });
 
-  return { verts, uvs, weights, indices, tris, bindPoses };
+  return { verts, uvs, weights, indices, tris, submeshTris, bindPoses };
 }
 
 export function skinMesh(
@@ -287,38 +296,48 @@ export function buildFrameBatches(
     allSkinnedList.push(skinned);
     allUvsList.push(meshData.uvs);
 
-    const reindexedTris: Tri[] = meshData.tris.map(([a, b, c]) => [a + offset, b + offset, c + offset]);
+    const subLists = meshData.submeshTris && meshData.submeshTris.length > 0
+      ? meshData.submeshTris
+      : [meshData.tris];
 
-    // Check material texture
-    let batchTex = fallbackTex;
-    let label = 'fallback';
-    const matRef = smr.data.materials?.[0];
-    if (matRef?.m_PathID) {
-      const mat = byId.get(matRef.m_PathID);
-      if (mat?.data?.savedProperties?.texEnvs) {
-        for (const [propName, propVal] of mat.data.savedProperties.texEnvs) {
-          if (propVal.texture?.m_PathID) {
-            const texAsset = byId.get(propVal.texture.m_PathID);
-            if (texAsset) {
-              const found = decodedTextures.get(texAsset.name.toLowerCase());
-              if (found) {
-                batchTex = found;
-                label = `${mat.name} (${propName})`;
-                break;
+    for (let subIdx = 0; subIdx < subLists.length; subIdx++) {
+      const subTris = subLists[subIdx];
+      if (subTris.length === 0) continue;
+      const reindexedTris: Tri[] = subTris.map(([a, b, c]) => [a + offset, b + offset, c + offset]);
+
+      // Check material texture for this submesh
+      let batchTex = fallbackTex;
+      let label = 'fallback';
+      const matRef = smr.data.materials?.[subIdx] || smr.data.materials?.[0];
+      if (matRef?.m_PathID) {
+        const mat = byId.get(matRef.m_PathID);
+        if (mat?.data?.savedProperties?.texEnvs) {
+          for (const [propName, propVal] of mat.data.savedProperties.texEnvs) {
+            if (propName === '_MainTex' || !batchTex || batchTex === fallbackTex) {
+              if (propVal.texture?.m_PathID) {
+                const texAsset = byId.get(propVal.texture.m_PathID);
+                if (texAsset) {
+                  const found = decodedTextures.get(texAsset.name.toLowerCase());
+                  if (found) {
+                    batchTex = found;
+                    label = `${mat.name} (${propName})`;
+                    if (propName === '_MainTex') break;
+                  }
+                }
               }
             }
           }
         }
       }
-    }
 
-    batches.push({
-      tris: reindexedTris,
-      texRgba: batchTex.rgba,
-      texWidth: batchTex.width,
-      texHeight: batchTex.height,
-      label,
-    });
+      batches.push({
+        tris: reindexedTris,
+        texRgba: batchTex.rgba,
+        texWidth: batchTex.width,
+        texHeight: batchTex.height,
+        label,
+      });
+    }
 
     const vCount = skinned.length / 3;
     partMeta.push({
