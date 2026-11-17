@@ -61,7 +61,11 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <div className="flex items-center gap-2">
-          <img src="/salute-64.png" alt="Salute Icon" className="w-5 h-5 rounded object-cover shadow-sm" />
+          <img
+            src={`${import.meta.env.BASE_URL}salute-64.png`}
+            alt="Salute Icon"
+            className="w-5 h-5 rounded object-cover shadow-sm"
+          />
           <span className="text-xs font-semibold tracking-wider uppercase text-gray-300 font-mono">
             FGO NP Renderer
           </span>

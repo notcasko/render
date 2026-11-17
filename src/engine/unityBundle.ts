@@ -5,11 +5,21 @@ import { RenderEntry, LogCallback } from './types';
 let isTextureInit = false;
 async function ensureTextureInit() {
   if (isTextureInit) return;
+  const baseUrl = import.meta.env.BASE_URL || './';
+  const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  const localWasmPath = `${cleanBase}wasm`;
+
   try {
-    await initTexture({ wasmPath: '/wasm' });
+    await initTexture({ wasmPath: localWasmPath });
     isTextureInit = true;
   } catch (e: any) {
-    console.warn('initTexture fallback:', e);
+    console.warn('initTexture local path failed, falling back to CDN:', e);
+    try {
+      await initTexture({ wasmPath: 'https://cdn.jsdelivr.net/npm/texture2ddecoder-wasm@1.2.3/wasm' });
+      isTextureInit = true;
+    } catch (cdnErr) {
+      console.error('initTexture CDN fallback failed:', cdnErr);
+    }
   }
 }
 
