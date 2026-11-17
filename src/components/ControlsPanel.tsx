@@ -154,7 +154,13 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
             </div>
             <select
               value={selectedClip}
-              onChange={(e) => setSelectedClip(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedClip(val);
+                if (val.toLowerCase().endsWith('_xy') || val.toLowerCase().includes('cutin')) {
+                  setSettings((s) => ({ ...s, viewAxes: 'xy' }));
+                }
+              }}
               disabled={disabled}
               className="w-full bg-[#18121b] border border-[#35233b] rounded px-2.5 py-1.5 text-xs text-gray-200 outline-none focus:border-rose-500 font-mono"
             >
@@ -180,7 +186,15 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
             </div>
             <select
               value={selection.roots[0] || 'model'}
-              onChange={(e) => setSelection((prev) => ({ ...prev, roots: [e.target.value] }))}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelection((prev) => ({ ...prev, roots: [val] }));
+                if (val.toLowerCase().includes('cutin')) {
+                  setSettings((s) => ({ ...s, viewAxes: 'xy' }));
+                } else if (val === 'model' || val === 'chr') {
+                  setSettings((s) => ({ ...s, viewAxes: 'zy' }));
+                }
+              }}
               disabled={disabled}
               className="w-full bg-[#18121b] border border-[#35233b] rounded px-2.5 py-1.5 text-xs text-gray-200 outline-none focus:border-rose-500 font-mono"
             >

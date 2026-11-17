@@ -16,7 +16,11 @@ export function viewComponents(
     if (viewAxes === 'xy') {
       u[i] = x;
       v[i] = y;
-      depth[i] = z;
+      // In Unity 2D cut-in sheets, foreground layers (eyes, hair, mouth, accessories) have
+      // higher/less-negative Z values than the background layers (body base, skin, back hair).
+      // Since the rasterizer sorts descending by depth (farthest first, nearest last),
+      // mapping depth to -z ensures background (lower Z) is drawn first, and foreground (higher Z) is drawn on top.
+      depth[i] = -z;
     } else {
       // 'zy' default: screen X = Z, screen Y = Y, depth = X
       u[i] = z;

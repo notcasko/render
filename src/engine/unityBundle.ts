@@ -5,7 +5,7 @@ import { RenderEntry, LogCallback } from './types';
 let isTextureInit = false;
 async function ensureTextureInit() {
   if (isTextureInit) return;
-  const baseUrl = import.meta.env.BASE_URL || './';
+  const baseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || './';
   const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const localWasmPath = `${cleanBase}wasm`;
 

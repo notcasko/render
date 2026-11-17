@@ -62,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <div className="flex items-center gap-2">
           <img
-            src={`${import.meta.env.BASE_URL}salute-64.png`}
+            src={`${(typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || './'}salute-64.png`}
             alt="Salute Icon"
             className="w-5 h-5 rounded object-cover shadow-sm"
           />
