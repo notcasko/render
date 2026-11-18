@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Download, Upload, Play, Image as ImageIcon, Save, RefreshCw, PanelLeft } from 'lucide-react';
+import { DecodedTexture } from '../engine/unityBundle';
 
 interface HeaderProps {
   npId: string;
@@ -10,6 +11,9 @@ interface HeaderProps {
   stageName: string;
   hasBundle: boolean;
   hasRenderedImage: boolean;
+  bundleImages?: DecodedTexture[];
+  selectedImageName?: string | null;
+  onSelectBundleImage?: (name: string) => void;
   isGif?: boolean;
   isGifRange?: boolean;
   frameCount?: number;
@@ -31,6 +35,9 @@ export const Header: React.FC<HeaderProps> = ({
   stageName,
   hasBundle,
   hasRenderedImage,
+  bundleImages,
+  selectedImageName,
+  onSelectBundleImage,
   isGif,
   isGifRange,
   frameCount,
@@ -118,6 +125,44 @@ export const Header: React.FC<HeaderProps> = ({
           <Upload className="w-3.5 h-3.5 text-gray-400" />
           <span className="hidden sm:inline">Local File</span>
         </button>
+
+        {/* Bundle Images Dropdown (hidden until a file is downloaded/loaded) */}
+        {hasBundle && bundleImages && bundleImages.length > 0 && (
+          <div className="relative flex items-center">
+            <ImageIcon className="w-3.5 h-3.5 text-rose-400 absolute left-2.5 pointer-events-none" />
+            <select
+              value={selectedImageName || ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (!val) return;
+                onSelectBundleImage?.(val);
+              }}
+              disabled={isLoading || isRendering}
+              className="pl-8 pr-3 py-1 rounded bg-[#1a111e] hover:bg-[#231728] border border-[#2d1b33] focus:border-rose-500 text-gray-300 text-xs font-mono transition-colors cursor-pointer max-w-[180px] sm:max-w-[220px] truncate"
+              title="View bundle textures directly on canvas"
+            >
+              {!selectedImageName && (
+                <option value="" disabled className="bg-[#18121b] text-gray-500">
+                  Images ({bundleImages.length})
+                </option>
+              )}
+              {bundleImages.map((img) => {
+                const isSelected = img.name === selectedImageName;
+                return (
+                  <option
+                    key={img.name}
+                    value={img.name}
+                    className={`bg-[#18121b] font-mono ${
+                      isSelected ? 'text-rose-300 font-semibold' : 'text-gray-200'
+                    }`}
+                  >
+                    {isSelected ? `✓ ${img.name} (${img.width}x${img.height})` : `  ${img.name} (${img.width}x${img.height})`}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Right: Actions */}

@@ -53,6 +53,7 @@ export interface DecodedTexture {
   width: number;
   height: number;
   rgba: Uint8Array;
+  dataUrl?: string;
 }
 
 export interface PreparedBundleData {
@@ -60,10 +61,25 @@ export interface PreparedBundleData {
   clips: any[];
   textures: any[];
   decodedTextures: Map<string, DecodedTexture>;
+  decodedTexturesList: DecodedTexture[];
   defaultTexture: DecodedTexture | null;
   pathMap: Map<number, string>;
   rootCounts: Map<string, number>;
   assetsByPid: Map<bigint, any>;
+}
+
+export function decodedTextureToDataUrl(texture: DecodedTexture): string {
+  if (texture.dataUrl) return texture.dataUrl;
+  const canvas = document.createElement('canvas');
+  canvas.width = texture.width;
+  canvas.height = texture.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  const imgData = ctx.createImageData(texture.width, texture.height);
+  imgData.data.set(texture.rgba);
+  ctx.putImageData(imgData, 0, 0);
+  texture.dataUrl = canvas.toDataURL('image/png');
+  return texture.dataUrl;
 }
 
 export function fullPathOfTransform(tr: any, byId: Map<bigint, any>): string {
@@ -132,6 +148,7 @@ export async function parseUnityBundle(
   // Decode textures
   await ensureTextureInit();
   const decodedTextures = new Map<string, DecodedTexture>();
+  const decodedTexturesList: DecodedTexture[] = [];
   let defaultTexture: DecodedTexture | null = null;
   let maxArea = -1;
 
@@ -145,6 +162,7 @@ export async function parseUnityBundle(
         rgba: decoded.rgba,
       };
       decodedTextures.set(texAsset.name.toLowerCase(), entry);
+      decodedTexturesList.push(entry);
       const area = decoded.width * decoded.height;
       if (area > maxArea) {
         maxArea = area;
@@ -222,6 +240,7 @@ export async function parseUnityBundle(
     clips,
     textures,
     decodedTextures,
+    decodedTexturesList,
     defaultTexture,
     pathMap,
     rootCounts,

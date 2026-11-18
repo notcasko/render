@@ -45,6 +45,8 @@ export const LogConsole: React.FC<LogConsoleProps> = ({
     switch (cat) {
       case 'Preview':
         return 'text-rose-300 bg-rose-950/70 border-rose-700/60 font-semibold';
+      case 'Texture':
+        return 'text-teal-300 bg-teal-950/70 border-teal-700/60 font-semibold';
       case 'Network':
         return 'text-sky-400 bg-sky-950/50 border-sky-800/40';
       case 'Bundle':

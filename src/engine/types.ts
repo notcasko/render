@@ -117,7 +117,7 @@ export interface RenderHistoryItem {
 export interface LogEntry {
   id: string;
   timestamp: string;
-  category: 'Network' | 'Bundle' | 'Discovery' | 'Animation' | 'Geometry' | 'Skinning' | 'Camera' | 'Rasterizer' | 'Preview' | 'Done' | 'Error';
+  category: 'Network' | 'Bundle' | 'Discovery' | 'Animation' | 'Geometry' | 'Skinning' | 'Camera' | 'Rasterizer' | 'Preview' | 'Texture' | 'Done' | 'Error';
   message: string;
   level: 'info' | 'warn' | 'error' | 'success';
   detail?: string;

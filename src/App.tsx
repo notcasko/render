@@ -6,12 +6,15 @@ import { LogConsole } from './components/LogConsole';
 import { ServantSidebar } from './components/ServantSidebar';
 import { RenderPipeline } from './engine/pipeline';
 import { ClipInfo, LogEntry, RenderHistoryItem, RenderSettings, SelectionOptions } from './engine/types';
+import { DecodedTexture, decodedTextureToDataUrl } from './engine/unityBundle';
 
 export const App: React.FC = () => {
   const [npId, setNpId] = useState<string>('');
   const [selectedClip, setSelectedClip] = useState<string>('');
   const [availableClips, setAvailableClips] = useState<string[]>([]);
   const [availableRoots, setAvailableRoots] = useState<string[]>(['model']);
+  const [bundleImages, setBundleImages] = useState<DecodedTexture[]>([]);
+  const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
 
   const [currentClipInfo, setCurrentClipInfo] = useState<ClipInfo | null>(null);
   const [gifStartFrame, setGifStartFrame] = useState<number>(0);
@@ -115,9 +118,32 @@ export const App: React.FC = () => {
       } else if (roots.length > 0) {
         setSelection((s) => ({ ...s, roots: [roots[0]] }));
       }
+
+      const textures: DecodedTexture[] = bundle.decodedTexturesList || (bundle.decodedTextures ? Array.from(bundle.decodedTextures.values()) : []);
+      setBundleImages(textures);
+      setSelectedImageName(null);
     },
     []
   );
+
+  const handleSelectBundleImage = (imageName: string) => {
+    const tex = bundleImages.find((t) => t.name === imageName) || pipelineRef.current.getTextureByName(imageName);
+    if (!tex) return;
+    const url = decodedTextureToDataUrl(tex);
+    if (!url) return;
+
+    setFinalImageDataUrl(url);
+    setRenderedDims({ width: tex.width, height: tex.height });
+    setIsGifResult(false);
+    setSelectedImageName(tex.name);
+
+    addLog(
+      'Texture',
+      `Displayed texture "${tex.name}" (${tex.width}x${tex.height}) on canvas`,
+      undefined,
+      'info'
+    );
+  };
 
   // Whenever selectedClip changes, bundle loads, or selection/root changes, update clipInfo and gif frames
   useEffect(() => {
@@ -191,6 +217,10 @@ export const App: React.FC = () => {
     if (!hasBundle) {
       addLog('Error', 'Cannot render: no asset bundle loaded', undefined, 'error');
       return;
+    }
+
+    if (!isFastPreviewOnly) {
+      setSelectedImageName(null);
     }
 
     setIsRendering(true);
@@ -319,7 +349,9 @@ export const App: React.FC = () => {
     const a = document.createElement('a');
     a.href = finalImageDataUrl;
     const isAnimated = currentClipInfo?.hasAnimation && gifEndFrame > gifStartFrame;
-    if (isGifResult) {
+    if (selectedImageName) {
+      a.download = `fgo_${npId || 'bundle'}_tex_${selectedImageName}.png`;
+    } else if (isGifResult) {
       a.download = `fgo_${npId}_${selectedClip}_f${gifStartFrame}-${gifEndFrame}.gif`;
     } else if (isAnimated) {
       a.download = `fgo_${npId}_${selectedClip}_apng_f${gifStartFrame}-${gifEndFrame}.png`;
@@ -329,7 +361,7 @@ export const App: React.FC = () => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    const savedType = isGifResult ? 'GIF' : isAnimated ? 'APNG' : 'PNG';
+    const savedType = selectedImageName ? 'Texture PNG' : isGifResult ? 'GIF' : isAnimated ? 'APNG' : 'PNG';
     addLog('Done', `Saved ${savedType}: ${a.download}`, undefined, 'success');
   };
 
@@ -355,6 +387,9 @@ export const App: React.FC = () => {
         stageName={stageName}
         hasBundle={hasBundle}
         hasRenderedImage={!!finalImageDataUrl}
+        bundleImages={bundleImages}
+        selectedImageName={selectedImageName}
+        onSelectBundleImage={handleSelectBundleImage}
         isGif={isGifResult}
         isGifRange={Boolean(currentClipInfo?.hasAnimation && gifEndFrame > gifStartFrame)}
         frameCount={gifEndFrame - gifStartFrame + 1}

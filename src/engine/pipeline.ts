@@ -8,7 +8,7 @@ import {
   SelectionOptions,
   ViewBox,
 } from './types';
-import { parseUnityBundle, PreparedBundleData } from './unityBundle';
+import { parseUnityBundle, PreparedBundleData, DecodedTexture, decodedTextureToDataUrl } from './unityBundle';
 import { buildAnimPose, getClipInfo } from './animation';
 import { buildFrameBatches, recenterGeometry } from './skinning';
 import { project, refineViewBoxFromPixelBbox, alphaBbox, largestComponentBbox, viewBoxForVerts } from './projection';
@@ -95,6 +95,20 @@ export class RenderPipeline {
 
   public getLoadedBundle(): PreparedBundleData | null {
     return this.preparedBundle;
+  }
+
+  public getBundleTextures(): DecodedTexture[] {
+    if (!this.preparedBundle) return [];
+    return this.preparedBundle.decodedTexturesList || Array.from(this.preparedBundle.decodedTextures.values());
+  }
+
+  public getTextureByName(name: string): DecodedTexture | null {
+    if (!this.preparedBundle) return null;
+    return (
+      this.preparedBundle.decodedTexturesList?.find((t) => t.name === name) ||
+      this.preparedBundle.decodedTextures.get(name.toLowerCase()) ||
+      null
+    );
   }
 
   public chooseEntries(
