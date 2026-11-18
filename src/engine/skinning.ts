@@ -263,6 +263,160 @@ export function recenterGeometry(
   return { renderV, cameraV: renderV, anchor };
 }
 
+export function filterMeshDataByBones(
+  meshData: MeshData,
+  smr: any,
+  byId: Map<bigint, any>,
+  includeBones: string[] = [],
+  excludeBones: string[] = []
+): MeshData {
+  const incNeedles = (includeBones || []).map((s) => s.toLowerCase().trim()).filter(Boolean);
+  const excNeedles = (excludeBones || []).map((s) => s.toLowerCase().trim()).filter(Boolean);
+
+  if (incNeedles.length === 0 && excNeedles.length === 0) {
+    return meshData;
+  }
+
+  const bones: any[] = smr.data?.bones || [];
+  const boneNames: string[] = [];
+  const bonePaths: string[] = [];
+
+  for (const bRef of bones) {
+    const tr = byId.get(bRef.m_PathID);
+    if (!tr) {
+      boneNames.push('');
+      bonePaths.push('');
+      continue;
+    }
+    const goPid = tr.data?.gameObject?.m_PathID;
+    const go = goPid ? byId.get(goPid) : null;
+    boneNames.push(go ? (go.name || '').toLowerCase() : '');
+    bonePaths.push(fullPathOfTransform(tr, byId).toLowerCase());
+  }
+
+  function boneMatches(bIdx: number, needles: string[]): boolean {
+    if (bIdx < 0 || bIdx >= boneNames.length) return false;
+    const bName = boneNames[bIdx];
+    const bPath = bonePaths[bIdx];
+    return needles.some((n) => bName.includes(n) || bPath.includes(n));
+  }
+
+  const subLists = meshData.submeshTris && meshData.submeshTris.length > 0
+    ? meshData.submeshTris
+    : [meshData.tris];
+
+  const newSubmeshTris: Tri[][] = [];
+  const survivingTrisArray: Tri[] = [];
+
+  for (const sub of subLists) {
+    const survivingSub: Tri[] = [];
+    for (const tri of sub) {
+      if (excNeedles.length > 0) {
+        let drop = false;
+        for (const v of tri) {
+          for (let k = 0; k < 4; k++) {
+            const w = meshData.weights[v * 4 + k];
+            if (w > 0.001) {
+              const bIdx = meshData.indices[v * 4 + k];
+              if (boneMatches(bIdx, excNeedles)) {
+                drop = true;
+                break;
+              }
+            }
+          }
+          if (drop) break;
+        }
+        if (drop) continue;
+      }
+
+      if (incNeedles.length > 0) {
+        let keep = false;
+        for (const v of tri) {
+          for (let k = 0; k < 4; k++) {
+            const w = meshData.weights[v * 4 + k];
+            if (w > 0.001) {
+              const bIdx = meshData.indices[v * 4 + k];
+              if (boneMatches(bIdx, incNeedles)) {
+                keep = true;
+                break;
+              }
+            }
+          }
+          if (keep) break;
+        }
+        if (!keep) continue;
+      }
+
+      survivingSub.push(tri);
+      survivingTrisArray.push(tri);
+    }
+    newSubmeshTris.push(survivingSub);
+  }
+
+  if (survivingTrisArray.length === 0) {
+    return {
+      verts: new Float32Array(0),
+      uvs: new Float32Array(0),
+      weights: new Float32Array(0),
+      indices: new Int32Array(0),
+      tris: [],
+      submeshTris: newSubmeshTris,
+      bindPoses: meshData.bindPoses,
+    };
+  }
+
+  // Re-index vertices to only keep used ones (matching python fgo_render_refactored)
+  const usedVertsSet = new Set<number>();
+  for (const tri of survivingTrisArray) {
+    usedVertsSet.add(tri[0]);
+    usedVertsSet.add(tri[1]);
+    usedVertsSet.add(tri[2]);
+  }
+  const usedVerts = Array.from(usedVertsSet).sort((a, b) => a - b);
+  const oldToNew = new Map<number, number>();
+  for (let newIdx = 0; newIdx < usedVerts.length; newIdx++) {
+    oldToNew.set(usedVerts[newIdx], newIdx);
+  }
+
+  const numNewVerts = usedVerts.length;
+  const newVerts = new Float32Array(numNewVerts * 3);
+  const newUvs = new Float32Array(numNewVerts * 2);
+  const newWeights = new Float32Array(numNewVerts * 4);
+  const newIndices = new Int32Array(numNewVerts * 4);
+
+  for (let newIdx = 0; newIdx < numNewVerts; newIdx++) {
+    const oldIdx = usedVerts[newIdx];
+    newVerts[newIdx * 3 + 0] = meshData.verts[oldIdx * 3 + 0];
+    newVerts[newIdx * 3 + 1] = meshData.verts[oldIdx * 3 + 1];
+    newVerts[newIdx * 3 + 2] = meshData.verts[oldIdx * 3 + 2];
+    newUvs[newIdx * 2 + 0] = meshData.uvs[oldIdx * 2 + 0];
+    newUvs[newIdx * 2 + 1] = meshData.uvs[oldIdx * 2 + 1];
+    for (let k = 0; k < 4; k++) {
+      newWeights[newIdx * 4 + k] = meshData.weights[oldIdx * 4 + k];
+      newIndices[newIdx * 4 + k] = meshData.indices[oldIdx * 4 + k];
+    }
+  }
+
+  const reindexedSubmeshTris: Tri[][] = newSubmeshTris.map((sub) =>
+    sub.map(([a, b, c]) => [oldToNew.get(a)!, oldToNew.get(b)!, oldToNew.get(c)!])
+  );
+  const reindexedCombinedTris: Tri[] = survivingTrisArray.map(([a, b, c]) => [
+    oldToNew.get(a)!,
+    oldToNew.get(b)!,
+    oldToNew.get(c)!,
+  ]);
+
+  return {
+    verts: newVerts,
+    uvs: newUvs,
+    weights: newWeights,
+    indices: newIndices,
+    tris: reindexedCombinedTris,
+    submeshTris: reindexedSubmeshTris,
+    bindPoses: meshData.bindPoses,
+  };
+}
+
 export function buildFrameBatches(
   chosenEntries: RenderEntry[],
   animPose: AnimPose,
@@ -271,6 +425,8 @@ export function buildFrameBatches(
   byId: Map<bigint, any>,
   yawDeg: number = 0.0,
   mirror: boolean = false,
+  includeBones: string[] = [],
+  excludeBones: string[] = [],
   log?: LogCallback
 ): { allV: Float64Array; allUvs: Float32Array; batches: RenderBatch[]; partMeta: PartMeta[] } {
   const worldCache = new Map<bigint, Float64Array>();
@@ -283,8 +439,11 @@ export function buildFrameBatches(
   for (const entry of chosenEntries) {
     const smr = entry.smrAsset;
     const mesh = entry.meshAsset;
-    const meshData = parseMeshData(mesh);
-    if (meshData.verts.length === 0) continue;
+    const rawMeshData = parseMeshData(mesh);
+    if (rawMeshData.verts.length === 0) continue;
+
+    const meshData = filterMeshDataByBones(rawMeshData, smr, byId, includeBones, excludeBones);
+    if (meshData.verts.length === 0 || meshData.tris.length === 0) continue;
 
     const bones: any[] = smr.data.bones || [];
     const worldMats = bones.map((b: any) => {

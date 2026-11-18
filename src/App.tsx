@@ -5,7 +5,7 @@ import { CanvasViewport } from './components/CanvasViewport';
 import { LogConsole } from './components/LogConsole';
 import { ServantSidebar } from './components/ServantSidebar';
 import { RenderPipeline } from './engine/pipeline';
-import { ClipInfo, LogEntry, RenderHistoryItem, RenderSettings, SelectionOptions } from './engine/types';
+import { ClipInfo, LogEntry, RenderHistoryItem, RenderSettings, SelectionOptions, BoneBranchInfo } from './engine/types';
 import { DecodedTexture, decodedTextureToDataUrl } from './engine/unityBundle';
 
 export const App: React.FC = () => {
@@ -15,6 +15,7 @@ export const App: React.FC = () => {
   const [availableRoots, setAvailableRoots] = useState<string[]>(['model']);
   const [bundleImages, setBundleImages] = useState<DecodedTexture[]>([]);
   const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
+  const [boneBranches, setBoneBranches] = useState<BoneBranchInfo[]>([]);
 
   const [currentClipInfo, setCurrentClipInfo] = useState<ClipInfo | null>(null);
   const [gifStartFrame, setGifStartFrame] = useState<number>(0);
@@ -114,14 +115,19 @@ export const App: React.FC = () => {
       const roots = Array.from(bundle.rootCounts.keys()) as string[];
       setAvailableRoots(roots);
       if (roots.includes('model')) {
-        setSelection((s) => ({ ...s, roots: ['model'] }));
+        setSelection((s) => ({ ...s, roots: ['model'], includeBones: [], excludeBones: [] }));
       } else if (roots.length > 0) {
-        setSelection((s) => ({ ...s, roots: [roots[0]] }));
+        setSelection((s) => ({ ...s, roots: [roots[0]], includeBones: [], excludeBones: [] }));
+      } else {
+        setSelection((s) => ({ ...s, includeBones: [], excludeBones: [] }));
       }
 
       const textures: DecodedTexture[] = bundle.decodedTexturesList || (bundle.decodedTextures ? Array.from(bundle.decodedTextures.values()) : []);
       setBundleImages(textures);
       setSelectedImageName(null);
+
+      const branches: BoneBranchInfo[] = bundle.boneBranches || [];
+      setBoneBranches(branches);
     },
     []
   );
@@ -445,6 +451,8 @@ export const App: React.FC = () => {
           setSelectedClip={setSelectedClip}
           availableRoots={availableRoots}
           clipInfo={currentClipInfo}
+          boneBranches={boneBranches}
+          hasBundle={hasBundle}
           gifStartFrame={gifStartFrame}
           setGifStartFrame={setGifStartFrame}
           gifEndFrame={gifEndFrame}

@@ -1,6 +1,6 @@
 import { load } from 'unity-asset-reader';
 import { decodeImage, initTexture } from 'unity-asset-reader-texture';
-import { RenderEntry, LogCallback } from './types';
+import { RenderEntry, LogCallback, BoneBranchInfo } from './types';
 
 let isTextureInit = false;
 async function ensureTextureInit() {
@@ -66,6 +66,7 @@ export interface PreparedBundleData {
   pathMap: Map<number, string>;
   rootCounts: Map<string, number>;
   assetsByPid: Map<bigint, any>;
+  boneBranches: BoneBranchInfo[];
 }
 
 export function decodedTextureToDataUrl(texture: DecodedTexture): string {
@@ -235,6 +236,62 @@ export async function parseUnityBundle(
 
   log?.('Discovery', `Discovered ${entries.length} render entries under roots: ${Array.from(rootCounts.keys()).join(', ')}`);
 
+  // Discover bone branches (sub-entities) across all SMRs
+  const branchCounts = new Map<string, number>();
+  for (const smr of smrs) {
+    const bones = smr.data?.bones || [];
+    for (const b of bones) {
+      const tr = assetsByPid.get(b.m_PathID);
+      if (!tr) continue;
+      let cur = tr;
+      const path: string[] = [];
+      while (cur) {
+        const go = cur.data?.gameObject?.m_PathID ? assetsByPid.get(cur.data.gameObject.m_PathID) : null;
+        if (go) path.push(go.name);
+        cur = cur.data?.father?.m_PathID ? assetsByPid.get(cur.data.father.m_PathID) : null;
+      }
+      const rev = path.reverse();
+      for (const p of rev) {
+        if (
+          !['model', 'joint_all_Base', 'joint_all', 'joint_all_scale', 'joint_all_rot'].includes(p) &&
+          !p.startsWith('chr_') &&
+          !p.startsWith('body_')
+        ) {
+          branchCounts.set(p, (branchCounts.get(p) || 0) + 1);
+          break;
+        }
+      }
+    }
+  }
+
+  const boneBranches: BoneBranchInfo[] = Array.from(branchCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => {
+      let tag = name.toLowerCase().replace(/^joint_/, '').replace(/_(all|root|base|hip|scale|rot)$/, '');
+      if (!tag) tag = name.toLowerCase();
+
+      // Human-friendly label for known servant entities
+      let label = name;
+      if (tag === 'zbr' || tag === 'zzbr') label = `${name} (Zanzaburo)`;
+      else if (tag === 'okn') label = `${name} (Okuni)`;
+      else if (tag === 'mok') label = `${name} (MOK / Komachi)`;
+      else if (tag === 'mot') label = `${name} (MOT / Suitor)`;
+      else if (tag === 'cloud') label = `${name} (Cloud)`;
+      else if (tag === 'flamehalo') label = `${name} (Flame Halo)`;
+      else if (tag === 'weapon') label = `${name} (Weapon)`;
+
+      return {
+        name,
+        count,
+        tag,
+        label,
+      };
+    });
+
+  if (boneBranches.length > 0) {
+    log?.('Discovery', `Discovered ${boneBranches.length} bone branches: ${boneBranches.map(b => `${b.tag} (${b.count})`).join(', ')}`);
+  }
+
   return {
     entries,
     clips,
@@ -245,5 +302,6 @@ export async function parseUnityBundle(
     pathMap,
     rootCounts,
     assetsByPid,
+    boneBranches,
   };
 }

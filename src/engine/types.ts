@@ -51,6 +51,13 @@ export interface SelectionOptions {
   textureName?: string;
 }
 
+export interface BoneBranchInfo {
+  name: string;
+  count: number;
+  tag: string;
+  label?: string;
+}
+
 export interface RenderEntry {
   index: number;
   meshName: string;

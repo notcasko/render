@@ -6,8 +6,9 @@ import {
   TextureFilter,
   FocusMode,
   ViewAxes,
+  BoneBranchInfo,
 } from '../engine/types';
-import { Sliders, Eye, Box, Layers, Sparkles, RefreshCw, ZoomIn, Crop, Film } from 'lucide-react';
+import { Sliders, Eye, Box, Layers, Sparkles, RefreshCw, ZoomIn, Crop, Film, Users } from 'lucide-react';
 
 interface ControlsPanelProps {
   settings: RenderSettings;
@@ -18,6 +19,8 @@ interface ControlsPanelProps {
   selectedClip: string;
   setSelectedClip: (clip: string) => void;
   availableRoots: string[];
+  boneBranches?: BoneBranchInfo[];
+  hasBundle?: boolean;
   clipInfo: ClipInfo | null;
   gifStartFrame: number;
   setGifStartFrame: (val: number) => void;
@@ -43,6 +46,8 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   selectedClip,
   setSelectedClip,
   availableRoots,
+  boneBranches,
+  hasBundle,
   clipInfo,
   gifStartFrame,
   setGifStartFrame,
@@ -58,6 +63,25 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   isRendering,
   disabled,
 }) => {
+  const toggleExcludeBone = (tag: string) => {
+    setSelection((prev) => {
+      const current = prev.excludeBones || [];
+      const exists = current.includes(tag);
+      const next = exists ? current.filter((t) => t !== tag) : [...current, tag];
+      const inc = (prev.includeBones || []).filter((t) => t !== tag);
+      return { ...prev, excludeBones: next, includeBones: inc };
+    });
+  };
+
+  const toggleIncludeBone = (tag: string) => {
+    setSelection((prev) => {
+      const current = prev.includeBones || [];
+      const exists = current.includes(tag);
+      const next = exists ? current.filter((t) => t !== tag) : [tag];
+      const exc = (prev.excludeBones || []).filter((t) => t !== tag);
+      return { ...prev, includeBones: next, excludeBones: exc };
+    });
+  };
   const sizePresets = [
     { label: '1024px', size: 1024 },
     { label: '2048px', size: 2048 },
@@ -371,6 +395,94 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
             </div>
           )}
         </div>
+
+        {/* SUB-ENTITIES / BONE FILTERS (only visible when a multi-branch bundle is loaded) */}
+        {hasBundle && boneBranches && boneBranches.length > 1 && (
+          <>
+            <hr className="border-[#2d1f32]" />
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold tracking-wider text-gray-400 uppercase flex items-center gap-1.5">
+                  <Users className="w-3 h-3 text-rose-400" />
+                  Sub-Entities / Bones
+                </label>
+                {(selection.includeBones?.length || selection.excludeBones?.length) ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelection((s) => ({ ...s, includeBones: [], excludeBones: [] }));
+                    }}
+                    className="text-[10px] text-rose-400 hover:text-rose-300 underline cursor-pointer"
+                  >
+                    Reset Filters
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                {boneBranches.map((branch) => {
+                  const isExcluded = selection.excludeBones?.includes(branch.tag);
+                  const isIncluded = selection.includeBones?.includes(branch.tag);
+
+                  return (
+                    <div
+                      key={branch.name}
+                      className={`flex items-center justify-between p-2 rounded border text-xs transition-colors ${
+                        isExcluded
+                          ? 'border-red-900/60 bg-red-950/30 text-red-300'
+                          : isIncluded
+                          ? 'border-emerald-800/70 bg-emerald-950/40 text-emerald-300'
+                          : 'border-[#35233b] bg-[#18121b] text-gray-300'
+                      }`}
+                    >
+                      <div className="flex flex-col min-w-0 pr-2">
+                        <span
+                          className={`font-mono text-xs font-medium truncate ${
+                            isExcluded ? 'line-through opacity-70' : ''
+                          }`}
+                          title={branch.name}
+                        >
+                          {branch.label || branch.name}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          {branch.count} bones
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => toggleExcludeBone(branch.tag)}
+                          disabled={disabled}
+                          className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                            isExcluded
+                              ? 'bg-red-800 hover:bg-red-700 text-white border border-red-600'
+                              : 'bg-[#25172b] hover:bg-[#382142] text-gray-300 hover:text-red-300 border border-[#3b2344]'
+                          }`}
+                          title={`Exclude/Hide ${branch.label || branch.tag}`}
+                        >
+                          {isExcluded ? 'Hidden' : 'Hide'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => toggleIncludeBone(branch.tag)}
+                          disabled={disabled}
+                          className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                            isIncluded
+                              ? 'bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-500'
+                              : 'bg-[#25172b] hover:bg-[#382142] text-gray-300 hover:text-emerald-300 border border-[#3b2344]'
+                          }`}
+                          title={`Render only ${branch.label || branch.tag}`}
+                        >
+                          {isIncluded ? 'Only' : 'Solo'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
 
         <hr className="border-[#2d1f32]" />
 

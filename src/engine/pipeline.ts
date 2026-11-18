@@ -269,7 +269,10 @@ export class RenderPipeline {
           this.preparedBundle.decodedTextures,
           this.preparedBundle.assetsByPid,
           0.0,
-          settings.mirror
+          settings.mirror,
+          selection.includeBones,
+          selection.excludeBones,
+          log
         );
         const { cameraV } = recenterGeometry(allV, partMeta, settings.gifCenter);
         const box = viewBoxForVerts(cameraV, settings.viewAxes);
@@ -296,7 +299,10 @@ export class RenderPipeline {
         this.preparedBundle.decodedTextures,
         this.preparedBundle.assetsByPid,
         0.0,
-        settings.mirror
+        settings.mirror,
+        selection.includeBones,
+        selection.excludeBones,
+        log
       );
       const { renderV: rv0 } = recenterGeometry(v0, m0, settings.gifCenter);
       const { verts2d: rV2d, depths: rDepths } = project(rv0, roughSize, roughSize, roughPad, lockedCameraBox, settings.viewAxes, Boolean(settings.invertDepth));
@@ -358,7 +364,10 @@ export class RenderPipeline {
           this.preparedBundle.decodedTextures,
           this.preparedBundle.assetsByPid,
           0.0,
-          settings.mirror
+          settings.mirror,
+          selection.includeBones,
+          selection.excludeBones,
+          log
         );
         const { renderV } = recenterGeometry(allV, partMeta, settings.gifCenter);
         const { verts2d, depths } = project(renderV, workW, workH, padPx, refinedBox, settings.viewAxes, Boolean(settings.invertDepth));
@@ -474,9 +483,23 @@ export class RenderPipeline {
       this.preparedBundle.assetsByPid,
       0.0, // Fixed at 0 (Requirement #7: No yaw rotation)
       settings.mirror,
+      selection.includeBones,
+      selection.excludeBones,
       log
     );
     await yieldToMain();
+
+    if (allV.length === 0) {
+      await emitLog('Warning', 'No geometry surviving current bone/mesh filter selection.', undefined, 'warn');
+      return {
+        rgba: new Uint8Array(settings.width * settings.height * 4),
+        width: settings.width,
+        height: settings.height,
+        renderTimeMs: performance.now() - startTime,
+        isGif: false,
+        isAnimated: false,
+      };
+    }
 
     const { renderV } = recenterGeometry(allV, partMeta, settings.gifCenter);
 
