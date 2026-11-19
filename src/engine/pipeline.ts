@@ -15,6 +15,7 @@ import { buildAnimPose, getClipInfo } from './animation';
 import { buildFrameBatches, recenterGeometry, applyAnchor } from './skinning';
 import { project, refineViewBoxFromPixelBbox, alphaBbox, largestComponentBbox, viewBoxForVerts } from './projection';
 import { drawBatchesSoftware, downsampleImage, trimTransparent, trimFramesUnion, yieldToMain } from './rasterizer';
+import { extractTextureIslands, getExcludedTrianglesForEntry, TextureIsland } from './textureIslands';
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 import UPNG from 'upng-js';
 
@@ -31,6 +32,67 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
 
 export class RenderPipeline {
   private preparedBundle: PreparedBundleData | null = null;
+  private cachedIslands: TextureIsland[] = [];
+  private cachedIslandsKey: string = '';
+
+  public getOrExtractIslands(
+    chosenEntries?: RenderEntry[],
+    targetTex?: DecodedTexture,
+    selection?: SelectionOptions
+  ): TextureIsland[] {
+    if (!this.preparedBundle) return [];
+    const entries = chosenEntries || (selection ? this.chooseEntries(this.preparedBundle.entries, selection) : this.preparedBundle.entries);
+    const fallbackTex = targetTex || this.preparedBundle.defaultTexture || Array.from(this.preparedBundle.decodedTextures.values())[0];
+    if (!fallbackTex) return [];
+
+    const key = `${entries.map((e) => e.index).join(',')}_${fallbackTex.name}`;
+    if (this.cachedIslandsKey === key && this.cachedIslands.length > 0) {
+      return this.cachedIslands;
+    }
+
+    this.cachedIslands = extractTextureIslands(
+      entries,
+      this.preparedBundle.decodedTextures,
+      fallbackTex,
+      this.preparedBundle.assetsByPid
+    );
+    this.cachedIslandsKey = key;
+    return this.cachedIslands;
+  }
+
+  public extractTextureIslandsForCurrent(selection: SelectionOptions): TextureIsland[] {
+    if (!this.preparedBundle) return [];
+    const chosen = this.chooseEntries(this.preparedBundle.entries, selection);
+    let targetTex = this.preparedBundle.defaultTexture;
+    if (selection.textureName) {
+      const want = selection.textureName.toLowerCase();
+      targetTex = this.preparedBundle.decodedTextures.get(want) || targetTex;
+    }
+    if (!targetTex && this.preparedBundle.decodedTextures.size > 0) {
+      targetTex = Array.from(this.preparedBundle.decodedTextures.values())[0];
+    }
+    if (!targetTex) return [];
+    return this.getOrExtractIslands(chosen, targetTex, selection);
+  }
+
+  private getExcludedTrianglesMap(
+    chosenEntries: RenderEntry[],
+    selection: SelectionOptions,
+    targetTex: DecodedTexture
+  ): Map<number, Set<number>> | null {
+    if (!selection.excludedIslands || selection.excludedIslands.length === 0) {
+      return null;
+    }
+    const islands = this.getOrExtractIslands(chosenEntries, targetTex, selection);
+    const map = new Map<number, Set<number>>();
+    for (const entry of chosenEntries) {
+      const set = getExcludedTrianglesForEntry(islands, selection.excludedIslands, entry.index);
+      if (set && set.size > 0) {
+        map.set(entry.index, set);
+      }
+    }
+    return map.size > 0 ? map : null;
+  }
 
   public async fetchBundle(
     npId: string | number,
@@ -91,6 +153,8 @@ export class RenderPipeline {
     buffer: ArrayBuffer | Uint8Array,
     log?: LogCallback
   ): Promise<PreparedBundleData> {
+    this.cachedIslands = [];
+    this.cachedIslandsKey = '';
     this.preparedBundle = await parseUnityBundle(buffer, log);
     return this.preparedBundle;
   }
@@ -245,6 +309,11 @@ export class RenderPipeline {
       throw new Error('No decoded texture available for rendering');
     }
 
+    const excludedTrianglesByEntry = this.getExcludedTrianglesMap(chosenEntries, selection, targetTex);
+    if (selection.excludedIslands && selection.excludedIslands.length > 0) {
+      await emitLog('Discovery', `Undress filter active: excluding ${selection.excludedIslands.length} texture part(s)`);
+    }
+
     // Hardcoded padding fraction at 0.05 (Requirement #1)
     const padFrac = 0.05;
 
@@ -268,6 +337,7 @@ export class RenderPipeline {
         settings.mirror,
         selection.includeBones,
         selection.excludeBones,
+        excludedTrianglesByEntry,
         log
       );
       const lockedAnchor: Vec3 = (settings.gifCenter && settings.gifCenter !== 'none')
@@ -296,6 +366,7 @@ export class RenderPipeline {
             settings.mirror,
             selection.includeBones,
             selection.excludeBones,
+            excludedTrianglesByEntry,
             log
           );
           allV = batches.allV;
@@ -348,6 +419,7 @@ export class RenderPipeline {
             settings.mirror,
             selection.includeBones,
             selection.excludeBones,
+            excludedTrianglesByEntry,
             log
           );
           frameV = res.allV;
@@ -457,6 +529,7 @@ export class RenderPipeline {
             settings.mirror,
             selection.includeBones,
             selection.excludeBones,
+            excludedTrianglesByEntry,
             log
           );
           allV = res.allV;
@@ -579,6 +652,7 @@ export class RenderPipeline {
       settings.mirror,
       selection.includeBones,
       selection.excludeBones,
+      excludedTrianglesByEntry,
       log
     );
     await yieldToMain();

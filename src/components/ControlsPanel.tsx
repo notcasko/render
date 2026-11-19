@@ -8,7 +8,7 @@ import {
   ViewAxes,
   BoneBranchInfo,
 } from '../engine/types';
-import { Sliders, Eye, Box, Layers, Sparkles, RefreshCw, ZoomIn, Crop, Film, Users } from 'lucide-react';
+import { Sliders, Eye, Box, Layers, Sparkles, RefreshCw, ZoomIn, Crop, Film, Users, Scissors } from 'lucide-react';
 
 interface ControlsPanelProps {
   settings: RenderSettings;
@@ -21,6 +21,8 @@ interface ControlsPanelProps {
   availableRoots: string[];
   boneBranches?: BoneBranchInfo[];
   hasBundle?: boolean;
+  hasRenderedImage?: boolean;
+  onOpenUndressModal?: () => void;
   clipInfo: ClipInfo | null;
   gifStartFrame: number;
   setGifStartFrame: (val: number) => void;
@@ -48,6 +50,8 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   availableRoots,
   boneBranches,
   hasBundle,
+  hasRenderedImage,
+  onOpenUndressModal,
   clipInfo,
   gifStartFrame,
   setGifStartFrame,
@@ -161,6 +165,31 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
               256x256
             </span>
           </div>
+
+          {/* UNDRESS / CUT TEXTURE PARTS (Requirement: only visible when asset is rendered already) */}
+          {hasRenderedImage && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onOpenUndressModal}
+                disabled={disabled || isRendering}
+                className="w-full flex items-center justify-between px-3 py-2 rounded bg-gradient-to-r from-[#201024] to-[#2b1430] hover:from-[#2d1633] hover:to-[#381a3f] border border-rose-700/60 text-rose-200 text-xs font-semibold shadow-sm transition-all group cursor-pointer disabled:opacity-40"
+                title="Open Undress modal to inspect and cut/hide individual texture parts"
+              >
+                <div className="flex items-center gap-2">
+                  <Scissors className="w-3.5 h-3.5 text-rose-400 group-hover:rotate-12 transition-transform" />
+                  <span>Undress / Cut Parts</span>
+                </div>
+                {selection.excludedIslands && selection.excludedIslands.length > 0 ? (
+                  <span className="px-1.5 py-0.2 bg-red-600 text-white text-[10px] rounded-full font-mono font-bold">
+                    {selection.excludedIslands.length} cut
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-rose-400/80 font-mono">Open</span>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* GROUP 1: Asset & Clip Selection */}
@@ -319,9 +348,11 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                     const val = Math.min(Number(e.target.value), gifEndFrame);
                     setGifStartFrame(val);
                   }}
-                  className="absolute w-full h-2 appearance-none bg-transparent pointer-events-none z-20
+                  className={`absolute w-full h-2 appearance-none bg-transparent pointer-events-none ${
+                    gifStartFrame === clipInfo.totalFrames ? 'z-30' : 'z-20'
+                  }
                     [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-rose-500 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md
-                    [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-rose-500 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-md"
+                    [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-rose-500 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-md`}
                   title={`GIF Start Frame: ${gifStartFrame}`}
                 />
 
@@ -336,9 +367,11 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                     const val = Math.max(Number(e.target.value), gifStartFrame);
                     setGifEndFrame(val);
                   }}
-                  className="absolute w-full h-2 appearance-none bg-transparent pointer-events-none z-20
+                  className={`absolute w-full h-2 appearance-none bg-transparent pointer-events-none ${
+                    gifStartFrame === clipInfo.totalFrames ? 'z-20' : 'z-30'
+                  }
                     [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-rose-400 [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md
-                    [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-rose-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-md"
+                    [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-rose-400 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-md`}
                   title={`GIF End Frame: ${gifEndFrame}`}
                 />
               </div>
@@ -367,10 +400,31 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                     disabled={disabled}
                     onClick={() => {
                       setGifStartFrame(0);
+                      setGifEndFrame(0);
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                      gifStartFrame === 0 && gifEndFrame === 0
+                        ? 'border-rose-500 bg-rose-950/70 text-rose-200 font-semibold shadow-sm'
+                        : 'border-[#35233b] bg-[#18121b] text-gray-300 hover:text-rose-300 hover:border-rose-400/50'
+                    }`}
+                    title="Select only the first frame (Frame 0)"
+                  >
+                    First
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => {
+                      setGifStartFrame(0);
                       setGifEndFrame(clipInfo.totalFrames);
                     }}
-                    className="px-2 py-0.5 rounded text-[10px] font-medium border border-[#35233b] bg-[#18121b] text-gray-300 hover:text-rose-300 hover:border-rose-400/50 transition-colors"
-                    title="Reset to full animation range"
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                      gifStartFrame === 0 && gifEndFrame === clipInfo.totalFrames && clipInfo.totalFrames > 0
+                        ? 'border-rose-500 bg-rose-950/70 text-rose-200 font-semibold shadow-sm'
+                        : 'border-[#35233b] bg-[#18121b] text-gray-300 hover:text-rose-300 hover:border-rose-400/50'
+                    }`}
+                    title="Select full animation range"
                   >
                     All
                   </button>

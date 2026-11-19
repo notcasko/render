@@ -275,12 +275,13 @@ export function filterMeshDataByBones(
   smr: any,
   byId: Map<bigint, any>,
   includeBones: string[] = [],
-  excludeBones: string[] = []
+  excludeBones: string[] = [],
+  excludedTriangles?: Set<number> | null
 ): MeshData {
   const incNeedles = (includeBones || []).map((s) => s.toLowerCase().trim()).filter(Boolean);
   const excNeedles = (excludeBones || []).map((s) => s.toLowerCase().trim()).filter(Boolean);
 
-  if (incNeedles.length === 0 && excNeedles.length === 0) {
+  if (incNeedles.length === 0 && excNeedles.length === 0 && (!excludedTriangles || excludedTriangles.size === 0)) {
     return meshData;
   }
 
@@ -314,10 +315,18 @@ export function filterMeshDataByBones(
 
   const newSubmeshTris: Tri[][] = [];
   const survivingTrisArray: Tri[] = [];
+  let triGlobalIdx = 0;
 
   for (const sub of subLists) {
     const survivingSub: Tri[] = [];
     for (const tri of sub) {
+      const curTriIdx = triGlobalIdx++;
+
+      // Check if this triangle is excluded via island / texture part exclusion
+      if (excludedTriangles && excludedTriangles.has(curTriIdx)) {
+        continue;
+      }
+
       if (excNeedles.length > 0) {
         let drop = false;
         for (const v of tri) {
@@ -434,6 +443,7 @@ export function buildFrameBatches(
   mirror: boolean = false,
   includeBones: string[] = [],
   excludeBones: string[] = [],
+  excludedTrianglesByEntry?: Map<number, Set<number>> | null,
   log?: LogCallback
 ): { allV: Float64Array; allUvs: Float32Array; batches: RenderBatch[]; partMeta: PartMeta[] } {
   const worldCache = new Map<bigint, Float64Array>();
@@ -449,7 +459,8 @@ export function buildFrameBatches(
     const rawMeshData = parseMeshData(mesh);
     if (rawMeshData.verts.length === 0) continue;
 
-    const meshData = filterMeshDataByBones(rawMeshData, smr, byId, includeBones, excludeBones);
+    const excludedTris = excludedTrianglesByEntry?.get(entry.index) || null;
+    const meshData = filterMeshDataByBones(rawMeshData, smr, byId, includeBones, excludeBones, excludedTris);
     if (meshData.verts.length === 0 || meshData.tris.length === 0) continue;
 
     const bones: any[] = smr.data.bones || [];

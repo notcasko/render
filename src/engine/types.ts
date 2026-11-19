@@ -48,6 +48,7 @@ export interface SelectionOptions {
   excludePaths?: string[];
   includeBones?: string[];
   excludeBones?: string[];
+  excludedIslands?: string[];
   textureName?: string;
 }
 

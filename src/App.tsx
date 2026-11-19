@@ -4,8 +4,10 @@ import { ControlsPanel } from './components/ControlsPanel';
 import { CanvasViewport } from './components/CanvasViewport';
 import { LogConsole } from './components/LogConsole';
 import { ServantSidebar } from './components/ServantSidebar';
+import { UndressModal } from './components/UndressModal';
 import { RenderPipeline } from './engine/pipeline';
 import { ClipInfo, LogEntry, RenderHistoryItem, RenderSettings, SelectionOptions, BoneBranchInfo } from './engine/types';
+import { TextureIsland } from './engine/textureIslands';
 import { DecodedTexture, decodedTextureToDataUrl } from './engine/unityBundle';
 
 export const App: React.FC = () => {
@@ -16,6 +18,8 @@ export const App: React.FC = () => {
   const [bundleImages, setBundleImages] = useState<DecodedTexture[]>([]);
   const [selectedImageName, setSelectedImageName] = useState<string | null>(null);
   const [boneBranches, setBoneBranches] = useState<BoneBranchInfo[]>([]);
+  const [textureIslands, setTextureIslands] = useState<TextureIsland[]>([]);
+  const [isUndressModalOpen, setIsUndressModalOpen] = useState<boolean>(false);
 
   const [currentClipInfo, setCurrentClipInfo] = useState<ClipInfo | null>(null);
   const [gifStartFrame, setGifStartFrame] = useState<number>(0);
@@ -63,6 +67,7 @@ export const App: React.FC = () => {
 
   const pipelineRef = useRef<RenderPipeline>(new RenderPipeline());
   const hasInitializedRef = useRef<boolean>(false);
+  const lastClipRef = useRef<string>('');
 
   const addLog = useCallback(
     (
@@ -115,19 +120,22 @@ export const App: React.FC = () => {
       const roots = Array.from(bundle.rootCounts.keys()) as string[];
       setAvailableRoots(roots);
       if (roots.includes('model')) {
-        setSelection((s) => ({ ...s, roots: ['model'], includeBones: [], excludeBones: [] }));
+        setSelection((s) => ({ ...s, roots: ['model'], includeBones: [], excludeBones: [], excludedIslands: [] }));
       } else if (roots.length > 0) {
-        setSelection((s) => ({ ...s, roots: [roots[0]], includeBones: [], excludeBones: [] }));
+        setSelection((s) => ({ ...s, roots: [roots[0]], includeBones: [], excludeBones: [], excludedIslands: [] }));
       } else {
-        setSelection((s) => ({ ...s, includeBones: [], excludeBones: [] }));
+        setSelection((s) => ({ ...s, includeBones: [], excludeBones: [], excludedIslands: [] }));
       }
 
       const textures: DecodedTexture[] = bundle.decodedTexturesList || (bundle.decodedTextures ? Array.from(bundle.decodedTextures.values()) : []);
       setBundleImages(textures);
       setSelectedImageName(null);
+      setTextureIslands([]);
+      setIsUndressModalOpen(false);
 
       const branches: BoneBranchInfo[] = bundle.boneBranches || [];
       setBoneBranches(branches);
+      lastClipRef.current = '';
     },
     []
   );
@@ -151,16 +159,24 @@ export const App: React.FC = () => {
     );
   };
 
-  // Whenever selectedClip changes, bundle loads, or selection/root changes, update clipInfo and gif frames
+  // Whenever selectedClip changes, bundle loads, or selection/root changes, update clipInfo
   useEffect(() => {
     if (!hasBundle || !selectedClip) return;
     const bundle = pipelineRef.current.getLoadedBundle();
     const chosenEntries = bundle ? pipelineRef.current.chooseEntries(bundle.entries, selection) : undefined;
     const info = pipelineRef.current.getClipInfo(selectedClip, chosenEntries);
     setCurrentClipInfo(info);
-    if (info && info.hasAnimation && info.totalFrames > 0) {
+
+    const clipChanged = lastClipRef.current !== selectedClip;
+    if (clipChanged) {
+      lastClipRef.current = selectedClip;
+      // Default to "First" frame (frame 0 only) whenever a clip is selected or loaded
       setGifStartFrame(0);
-      setGifEndFrame(info.totalFrames);
+      setGifEndFrame(0);
+    } else if (info && info.totalFrames > 0) {
+      // Keep user's chosen frame range when settings/selection change, only clamp if necessary
+      setGifStartFrame((prev) => Math.min(prev, info.totalFrames));
+      setGifEndFrame((prev) => Math.min(prev, info.totalFrames));
     } else {
       setGifStartFrame(0);
       setGifEndFrame(0);
@@ -219,7 +235,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleRender = async (isFastPreviewOnly: boolean = false) => {
+  const handleRender = async (isFastPreviewOnly: boolean = false, overrideSelection?: SelectionOptions) => {
     if (!hasBundle) {
       addLog('Error', 'Cannot render: no asset bundle loaded', undefined, 'error');
       return;
@@ -229,6 +245,7 @@ export const App: React.FC = () => {
       setSelectedImageName(null);
     }
 
+    const activeSelection = overrideSelection || selection;
     setIsRendering(true);
     setProgressPercent(5);
     setStageName(isFastPreviewOnly ? 'Rendering 256px Fast Preview' : 'Rendering Image');
@@ -258,7 +275,7 @@ export const App: React.FC = () => {
 
       const result = await pipelineRef.current.render(
         effectiveSettings,
-        selection,
+        activeSelection,
         selectedClip,
         {
           onLog: addLog,
@@ -300,6 +317,15 @@ export const App: React.FC = () => {
       } else {
         setFinalImageDataUrl(url);
         setRenderedDims({ width: result.width, height: result.height });
+
+        // Update texture islands for Undress modal
+        try {
+          const islands = pipelineRef.current.extractTextureIslandsForCurrent(activeSelection);
+          setTextureIslands(islands);
+        } catch (e: any) {
+          console.warn('Could not extract texture islands:', e);
+        }
+
         const histId = `hist-${Date.now()}`;
         const item: RenderHistoryItem = {
           id: histId,
@@ -348,6 +374,22 @@ export const App: React.FC = () => {
       undefined,
       'info'
     );
+  };
+
+  const handleOpenUndressModal = () => {
+    let islands = textureIslands;
+    if (!islands || islands.length === 0) {
+      islands = pipelineRef.current.extractTextureIslandsForCurrent(selection);
+      setTextureIslands(islands);
+    }
+    setIsUndressModalOpen(true);
+  };
+
+  const handleApplyUndressAndRender = (newExcludedIds: string[]) => {
+    setIsUndressModalOpen(false);
+    const nextSelection = { ...selection, excludedIslands: newExcludedIds };
+    setSelection(nextSelection);
+    handleRender(false, nextSelection);
   };
 
   const handleSavePng = () => {
@@ -453,6 +495,8 @@ export const App: React.FC = () => {
           clipInfo={currentClipInfo}
           boneBranches={boneBranches}
           hasBundle={hasBundle}
+          hasRenderedImage={Boolean(finalImageDataUrl)}
+          onOpenUndressModal={handleOpenUndressModal}
           gifStartFrame={gifStartFrame}
           setGifStartFrame={setGifStartFrame}
           gifEndFrame={gifEndFrame}
@@ -468,6 +512,16 @@ export const App: React.FC = () => {
           disabled={isLoading || isRendering}
         />
       </div>
+
+      {/* Undress / Cut Texture Parts Modal Window */}
+      <UndressModal
+        isOpen={isUndressModalOpen}
+        onClose={() => setIsUndressModalOpen(false)}
+        islands={textureIslands}
+        excludedIslandIds={selection.excludedIslands || []}
+        onApplyAndRender={handleApplyUndressAndRender}
+        isRendering={isRendering}
+      />
     </div>
   );
 };
