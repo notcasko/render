@@ -223,6 +223,18 @@ export function applyViewTransform(
   return out;
 }
 
+export function applyAnchor(verts: Float64Array, anchor: Vec3): Float64Array {
+  if (anchor[0] === 0 && anchor[1] === 0 && anchor[2] === 0) return verts;
+  const out = new Float64Array(verts.length);
+  const n = verts.length / 3;
+  for (let i = 0; i < n; i++) {
+    out[i * 3 + 0] = verts[i * 3 + 0] - anchor[0];
+    out[i * 3 + 1] = verts[i * 3 + 1] - anchor[1];
+    out[i * 3 + 2] = verts[i * 3 + 2] - anchor[2];
+  }
+  return out;
+}
+
 export function recenterGeometry(
   allV: Float64Array,
   partMeta: PartMeta[],
@@ -254,12 +266,7 @@ export function recenterGeometry(
   }
 
   const anchor: Vec3 = [sumX / count, sumY / count, sumZ / count];
-  const renderV = new Float64Array(allV.length);
-  for (let i = 0; i < n; i++) {
-    renderV[i * 3 + 0] = allV[i * 3 + 0] - anchor[0];
-    renderV[i * 3 + 1] = allV[i * 3 + 1] - anchor[1];
-    renderV[i * 3 + 2] = allV[i * 3 + 2] - anchor[2];
-  }
+  const renderV = applyAnchor(allV, anchor);
   return { renderV, cameraV: renderV, anchor };
 }
 

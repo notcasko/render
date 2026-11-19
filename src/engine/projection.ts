@@ -69,10 +69,11 @@ export function project(
   const verts2d = new Float32Array(n * 2);
   const depths = new Float32Array(n);
   const uMid = 0.5 * (uMin + uMax);
+  const vMid = 0.5 * (vMin + vMax);
 
   for (let i = 0; i < n; i++) {
     verts2d[i * 2 + 0] = (u[i] - uMid) * scale + width / 2.0;
-    verts2d[i * 2 + 1] = height - ((v[i] - vMin) * scale + padPx);
+    verts2d[i * 2 + 1] = height / 2.0 - (v[i] - vMid) * scale;
     depths[i] = depth[i];
   }
 
@@ -176,9 +177,10 @@ export function refineViewBoxFromPixelBbox(
 
   const [x0, y0, x1, y1] = bbox;
   const uMid = 0.5 * (uMin + uMax);
+  const vMid = 0.5 * (vMin + vMax);
 
   const pxToU = (px: number) => (px - imgW / 2.0) / scale + uMid;
-  const pyToV = (py: number) => ((imgH - py) - padPx) / scale + vMin;
+  const pyToV = (py: number) => (imgH / 2.0 - py) / scale + vMid;
 
   const nu0 = pxToU(x0);
   const nu1 = pxToU(x1);

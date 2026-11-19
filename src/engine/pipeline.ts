@@ -3,14 +3,16 @@ import {
   LogCallback,
   PreviewCallback,
   ProgressCallback,
+  RenderBatch,
   RenderEntry,
   RenderSettings,
   SelectionOptions,
+  Vec3,
   ViewBox,
 } from './types';
 import { parseUnityBundle, PreparedBundleData, DecodedTexture, decodedTextureToDataUrl } from './unityBundle';
 import { buildAnimPose, getClipInfo } from './animation';
-import { buildFrameBatches, recenterGeometry } from './skinning';
+import { buildFrameBatches, recenterGeometry, applyAnchor } from './skinning';
 import { project, refineViewBoxFromPixelBbox, alphaBbox, largestComponentBbox, viewBoxForVerts } from './projection';
 import { drawBatchesSoftware, downsampleImage, trimTransparent, trimFramesUnion, yieldToMain } from './rasterizer';
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
@@ -254,6 +256,24 @@ export class RenderPipeline {
       const formatLabel = animFormat === 'gif' ? 'GIF (8-bit palette)' : 'APNG (32-bit Lossless Truecolor)';
       await emitLog('Animation', `Starting animation render (${formatLabel}): ${totalFrames} frames (frame ${startFrame} to ${endFrame}) at ${settings.width}x${settings.height}...`);
 
+      // Sample start frame to lock anchor across all animation frames
+      const poseStart = buildAnimPose(clip, this.preparedBundle.pathMap, startFrame, null);
+      const { allV: v0, allUvs: u0, batches: b0, partMeta: m0 } = buildFrameBatches(
+        chosenEntries,
+        poseStart,
+        targetTex,
+        this.preparedBundle.decodedTextures,
+        this.preparedBundle.assetsByPid,
+        0.0,
+        settings.mirror,
+        selection.includeBones,
+        selection.excludeBones,
+        log
+      );
+      const lockedAnchor: Vec3 = (settings.gifCenter && settings.gifCenter !== 'none')
+        ? recenterGeometry(v0, m0, settings.gifCenter).anchor
+        : [0, 0, 0];
+
       // A. Lock camera framing across entire animation
       await emitProgress(10, 'Locking camera framing across animation');
       let unionBox: ViewBox | null = null;
@@ -261,20 +281,26 @@ export class RenderPipeline {
         if (f % 5 === 0) {
           await yieldToMain();
         }
-        const pose = buildAnimPose(clip, this.preparedBundle.pathMap, f, null);
-        const { allV, partMeta } = buildFrameBatches(
-          chosenEntries,
-          pose,
-          targetTex,
-          this.preparedBundle.decodedTextures,
-          this.preparedBundle.assetsByPid,
-          0.0,
-          settings.mirror,
-          selection.includeBones,
-          selection.excludeBones,
-          log
-        );
-        const { cameraV } = recenterGeometry(allV, partMeta, settings.gifCenter);
+        let allV: Float64Array;
+        if (f === startFrame) {
+          allV = v0;
+        } else {
+          const pose = buildAnimPose(clip, this.preparedBundle.pathMap, f, null);
+          const batches = buildFrameBatches(
+            chosenEntries,
+            pose,
+            targetTex,
+            this.preparedBundle.decodedTextures,
+            this.preparedBundle.assetsByPid,
+            0.0,
+            settings.mirror,
+            selection.includeBones,
+            selection.excludeBones,
+            log
+          );
+          allV = batches.allV;
+        }
+        const cameraV = applyAnchor(allV, lockedAnchor);
         const box = viewBoxForVerts(cameraV, settings.viewAxes);
         if (box) {
           if (!unionBox) {
@@ -291,29 +317,83 @@ export class RenderPipeline {
       const lockedCameraBox: ViewBox = unionBox || [-1, 1, -1, 1];
       const roughSize = 512;
       const roughPad = Math.round(roughSize * padFrac);
-      const poseStart = buildAnimPose(clip, this.preparedBundle.pathMap, startFrame, null);
-      const { allV: v0, allUvs: u0, batches: b0, partMeta: m0 } = buildFrameBatches(
-        chosenEntries,
-        poseStart,
-        targetTex,
-        this.preparedBundle.decodedTextures,
-        this.preparedBundle.assetsByPid,
-        0.0,
-        settings.mirror,
-        selection.includeBones,
-        selection.excludeBones,
-        log
-      );
-      const { renderV: rv0 } = recenterGeometry(v0, m0, settings.gifCenter);
-      const { verts2d: rV2d, depths: rDepths } = project(rv0, roughSize, roughSize, roughPad, lockedCameraBox, settings.viewAxes, Boolean(settings.invertDepth));
-      const roughRgba = await drawBatchesSoftware(rV2d, u0, b0, rDepths, roughSize, roughSize, settings.alphaCutoff, 'nearest');
-      const roughBbox = settings.focusMode === 'largest_component'
-        ? largestComponentBbox(roughRgba, roughSize, roughSize, settings.alphaCutoff)
-        : alphaBbox(roughRgba, roughSize, roughSize, settings.alphaCutoff);
+
+      // Pass 2: Refine view box by sampling key frames to capture full animation bounds
+      const sampleStep = Math.max(1, Math.floor(totalFrames / 12));
+      const sampleFrames = new Set<number>();
+      for (let f = startFrame; f <= endFrame; f += sampleStep) {
+        sampleFrames.add(f);
+      }
+      sampleFrames.add(endFrame);
+
+      let unionRoughBbox: [number, number, number, number] | null = null;
+      for (const f of sampleFrames) {
+        let frameV: Float64Array;
+        let frameUvs: Float32Array;
+        let frameBatches: RenderBatch[];
+
+        if (f === startFrame) {
+          frameV = v0;
+          frameUvs = u0;
+          frameBatches = b0;
+        } else {
+          const pose = buildAnimPose(clip, this.preparedBundle.pathMap, f, null);
+          const res = buildFrameBatches(
+            chosenEntries,
+            pose,
+            targetTex,
+            this.preparedBundle.decodedTextures,
+            this.preparedBundle.assetsByPid,
+            0.0,
+            settings.mirror,
+            selection.includeBones,
+            selection.excludeBones,
+            log
+          );
+          frameV = res.allV;
+          frameUvs = res.allUvs;
+          frameBatches = res.batches;
+        }
+
+        const rv = applyAnchor(frameV, lockedAnchor);
+        const { verts2d: rV2d, depths: rDepths } = project(
+          rv,
+          roughSize,
+          roughSize,
+          roughPad,
+          lockedCameraBox,
+          settings.viewAxes,
+          Boolean(settings.invertDepth)
+        );
+        const roughRgba = await drawBatchesSoftware(
+          rV2d,
+          frameUvs,
+          frameBatches,
+          rDepths,
+          roughSize,
+          roughSize,
+          settings.alphaCutoff,
+          'nearest'
+        );
+        const frameBbox = settings.focusMode === 'largest_component'
+          ? largestComponentBbox(roughRgba, roughSize, roughSize, settings.alphaCutoff)
+          : alphaBbox(roughRgba, roughSize, roughSize, settings.alphaCutoff);
+
+        if (frameBbox) {
+          if (!unionRoughBbox) {
+            unionRoughBbox = [...frameBbox];
+          } else {
+            unionRoughBbox[0] = Math.min(unionRoughBbox[0], frameBbox[0]);
+            unionRoughBbox[1] = Math.min(unionRoughBbox[1], frameBbox[1]);
+            unionRoughBbox[2] = Math.max(unionRoughBbox[2], frameBbox[2]);
+            unionRoughBbox[3] = Math.max(unionRoughBbox[3], frameBbox[3]);
+          }
+        }
+      }
 
       let refinedBox: ViewBox = lockedCameraBox;
-      if (roughBbox) {
-        refinedBox = refineViewBoxFromPixelBbox(lockedCameraBox, roughBbox, roughSize, roughSize, roughPad, log);
+      if (unionRoughBbox) {
+        refinedBox = refineViewBoxFromPixelBbox(lockedCameraBox, unionRoughBbox, roughSize, roughSize, roughPad, log);
       }
 
       // Fast preview on start frame with refined camera
@@ -321,6 +401,7 @@ export class RenderPipeline {
         try {
           const previewSize = 256;
           const previewPad = Math.round(previewSize * padFrac);
+          const rv0 = applyAnchor(v0, lockedAnchor);
           const { verts2d: pV2d, depths: pDepths } = project(rv0, previewSize, previewSize, previewPad, refinedBox, settings.viewAxes, Boolean(settings.invertDepth));
           const previewRgba = await drawBatchesSoftware(pV2d, u0, b0, pDepths, previewSize, previewSize, settings.alphaCutoff, 'nearest');
           const previewCanvas = document.createElement('canvas');
@@ -356,20 +437,33 @@ export class RenderPipeline {
         const pct = Math.round(20 + (frameIdx / totalFrames) * 70);
         await emitProgress(pct, `Rendering animation frame ${f} (${frameIdx + 1}/${totalFrames})`);
 
-        const pose = buildAnimPose(clip, this.preparedBundle.pathMap, f, null);
-        const { allV, allUvs, batches, partMeta } = buildFrameBatches(
-          chosenEntries,
-          pose,
-          targetTex,
-          this.preparedBundle.decodedTextures,
-          this.preparedBundle.assetsByPid,
-          0.0,
-          settings.mirror,
-          selection.includeBones,
-          selection.excludeBones,
-          log
-        );
-        const { renderV } = recenterGeometry(allV, partMeta, settings.gifCenter);
+        let allV: Float64Array;
+        let allUvs: Float32Array;
+        let batches: RenderBatch[];
+
+        if (f === startFrame) {
+          allV = v0;
+          allUvs = u0;
+          batches = b0;
+        } else {
+          const pose = buildAnimPose(clip, this.preparedBundle.pathMap, f, null);
+          const res = buildFrameBatches(
+            chosenEntries,
+            pose,
+            targetTex,
+            this.preparedBundle.decodedTextures,
+            this.preparedBundle.assetsByPid,
+            0.0,
+            settings.mirror,
+            selection.includeBones,
+            selection.excludeBones,
+            log
+          );
+          allV = res.allV;
+          allUvs = res.allUvs;
+          batches = res.batches;
+        }
+        const renderV = applyAnchor(allV, lockedAnchor);
         const { verts2d, depths } = project(renderV, workW, workH, padPx, refinedBox, settings.viewAxes, Boolean(settings.invertDepth));
         const highRes = await drawBatchesSoftware(verts2d, allUvs, batches, depths, workW, workH, settings.alphaCutoff, settings.textureFilter);
         const frameRgba = (workW !== settings.width || workH !== settings.height)
